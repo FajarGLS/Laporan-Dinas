@@ -38,10 +38,10 @@ def init_mongodb():
         client = MongoClient(MONGODB_URI, server_api=ServerApi('1'))
         # Test the connection
         client.admin.command('ping')
-        st.success("✅ Successfully connected to DB!")
+        st.success("✅ Successfully connected to MongoDB!")
         return client[DATABASE_NAME][COLLECTION_NAME]
     except Exception as e:
-        st.error(f"❌ Failed to connect to DB: {e}")
+        st.error(f"❌ Failed to connect to MongoDB: {e}")
         return None
 
 # Initialize database
@@ -52,9 +52,9 @@ db_collection = init_mongodb()
 # ==============================================================================
 
 # Konfigurasi URL template .docx
-TEMPLATE_INSPEKSI_URL = "https://github.com/FajarGLS/Laporan-Dinas/raw/main/INSPEKSI.docx"
+TEMPLATE_INSPEKSI_URL = "https://github.com/FajarDPA/Laporan-Inspeksi/raw/main/INSPEKSI.docx"
 # Konfigurasi URL template .xlsx
-TEMPLATE_RBD_URL = "https://github.com/FajarGLS/Laporan-Dinas/raw/main/RBD.xlsx"
+TEMPLATE_RBD_URL = "https://github.com/FajarDPA/Laporan-Inspeksi/raw/main/RBD.xlsx"
 
 # Konfigurasi SMTP email
 EMAIL_SENDER = "fajar@dpagls.my.id"
@@ -392,9 +392,9 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Status Database")
     if db_collection:
-        st.success("🟢 DB Connected")
+        st.success("🟢 MongoDB Connected")
     else:
-        st.error("🔴 DB Disconnected")
+        st.error("🔴 MongoDB Disconnected")
 
 # ==============================================================================
 # BAGIAN 1: LAPORAN INSPEKSI
