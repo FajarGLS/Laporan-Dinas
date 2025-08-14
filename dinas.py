@@ -106,7 +106,7 @@ def replace_placeholder_everywhere(doc: Document, placeholder: str, value: str):
         _replace_in_paragraph(p, placeholder, value)
     for tbl in doc.tables:
         for row in tbl.rows:
-            for cell in cell.cells:
+            for cell in row.cells:
                 for p in cell.paragraphs:
                     _replace_in_paragraph(p, placeholder, value)
 
@@ -288,6 +288,14 @@ def send_email_with_attachment(
         return False
 
 # ==============================================================================
+# CALLBACK FUNCTIONS
+# ==============================================================================
+
+def add_dok_rows():
+    """Callback function untuk menambah rows dokumentasi"""
+    st.session_state.dok_rows += 2
+
+# ==============================================================================
 # UTAMA APLIKASI STREAMLIT
 # ==============================================================================
 
@@ -305,8 +313,7 @@ with st.sidebar:
     if st.session_state.report_type == "Laporan Inspeksi":
         if "dok_rows" not in st.session_state:
             st.session_state.dok_rows = 10
-        st.button("➕ Tambah Row Dokumentasi", on_click=lambda: st.session_state.dok_rows += 2 and st.rerun())
-
+        st.button("➕ Tambah Row Dokumentasi", on_click=add_dok_rows)
 
 # ==============================================================================
 # BAGIAN 1: LAPORAN INSPEKSI
