@@ -321,9 +321,9 @@ def render_sidebar():
         st.subheader("🗄️ Status Database")
         db_collection = init_mongodb()
         if db_collection is not None:
-            st.success("🟢 MongoDB Connected")
+            st.success("🟢 DB Connected")
         else:
-            st.error("🔴 MongoDB Disconnected")
+            st.error("🔴 DB Disconnected")
         
         # Info aplikasi
         st.markdown("---")
@@ -492,7 +492,7 @@ def render_rbd_form():
         with col1:
             trip_id = st.text_input(
                 "🏷️ ID Perjalanan Dinas", 
-                help="Contoh: 'FAJAR-JAKARTA-2024-08-15'", 
+                help="Contoh: 'FAJAR01'", 
                 value=st.session_state.form_data.get("trip_id", ""),
                 placeholder="ID unik untuk perjalanan dinas"
             )
@@ -743,6 +743,7 @@ def generate_inspection_report(vessel_name, imo, ship_type, callsign, place, sur
         
         # Replace placeholders
         replace_placeholder_everywhere(doc, "<<vessel_name>>", vessel_name)
+        replace_placeholder_everywhere(doc, "<<type>>", ship_type)
         replace_placeholder_everywhere(doc, "<<place>>", f"{place}, {survey_date.strftime('%d %B %Y')}")
         replace_placeholder_everywhere(doc, "<<master>>", master)
         
@@ -806,6 +807,12 @@ def generate_rbd_report(trip_data, email_rbd):
             rbd_wb = load_workbook(template_file)
             ws = rbd_wb.active
             
+            # --- PENAMBAHAN KODE ---
+            # Mengisi tanggal mulai dan selesai ke sel D11 dan H11
+            ws['D11'] = trip_data["start_date"]
+            ws['H11'] = trip_data["end_date"]
+            # -----------------------
+
             # Mengisi data ke spreadsheet
             ws['C13'] = trip_data["trip_purpose"]
             ws['F13'] = trip_data["vessel_code"]
@@ -1041,8 +1048,8 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 2rem;">
-        <p>© 2024 DPA GLS - Aplikasi Laporan Terintegrasi</p>
-        <p>Dibuat dengan ❤️ menggunakan Streamlit</p>
+        <p>© 2025 DPA GLS - Aplikasi Laporan</p>
+        <p>Dibuat dengan ❤️ menggunakan Hati</p>
     </div>
     """, unsafe_allow_html=True)
 
