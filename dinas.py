@@ -322,7 +322,7 @@ def send_email_with_attachment(
 
 def save_to_mongodb(data: Dict[str, Any]):
     """Menyimpan data ke MongoDB"""
-    if not db_collection:
+    if db_collection is None:
         st.error("❌ Koneksi MongoDB tidak tersedia")
         return False
     
@@ -349,7 +349,7 @@ def save_to_mongodb(data: Dict[str, Any]):
 
 def load_from_mongodb(trip_id: str) -> Dict[str, Any]:
     """Memuat data dari MongoDB"""
-    if not db_collection:
+    if db_collection is None:
         st.error("❌ Koneksi MongoDB tidak tersedia")
         return {}
     
@@ -369,7 +369,7 @@ def load_from_mongodb(trip_id: str) -> Dict[str, Any]:
 
 def get_all_trip_ids() -> list:
     """Mendapatkan semua trip ID yang tersimpan"""
-    if not db_collection:
+    if db_collection is None:
         return []
     
     try:
