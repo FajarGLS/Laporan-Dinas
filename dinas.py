@@ -44,7 +44,9 @@ TEMPLATE_RBD_URL = "https://raw.githubusercontent.com/FajarGLS/Laporan-Dinas/mai
 
 # Email Configuration
 EMAIL_SENDER = "fajar@dpagls.my.id"
-EMAIL_PASSWORD = quote_plus("Rahasia100%")
+# PERBAIKAN: Ganti string ini dengan kata sandi email Anda yang sebenarnya.
+# JANGAN gunakan quote_plus() karena itu bukan untuk kata sandi.
+EMAIL_PASSWORD = "Rahasia100%"
 SMTP_SERVER = "mail.dpagls.my.id"
 SMTP_PORT = 465
 
@@ -98,13 +100,13 @@ def init_mongodb():
         client.admin.command('ping')
         return client[DATABASE_NAME][COLLECTION_NAME]
     except ConnectionFailure as e:
-        st.error(f"❌ Failed to connect to MongoDB. Pastikan IP Whitelisting sudah diatur. Detail: {e}")
+        st.error(f"❌ Gagal terhubung ke MongoDB. Pastikan IP Whitelisting sudah diatur. Detail: {e}")
         return None
     except OperationFailure as e:
-        st.error(f"❌ Failed to connect to MongoDB. Pastikan username dan password benar. Detail: {e}")
+        st.error(f"❌ Gagal terhubung ke MongoDB. Pastikan username dan password benar. Detail: {e}")
         return None
     except Exception as e:
-        st.error(f"❌ Failed to connect to MongoDB: {e}")
+        st.error(f"❌ Gagal terhubung ke MongoDB: {e}")
         return None
 
 def save_to_mongodb(data: Dict[str, Any]):
@@ -759,6 +761,18 @@ def generate_inspection_report(vessel_name, imo, ship_type, callsign, place, sur
         base_filename = f"{survey_date.strftime('%Y.%m.%d')} {vessel_name} Inspection Report"
         docx_filename = f"{base_filename}.docx"
         
+        # PERBAIKAN: Pindahkan tombol download ke luar blok pengiriman email
+        # agar tombol tetap muncul meskipun email gagal.
+        st.success("✅ Laporan berhasil dibuat!")
+        
+        st.download_button(
+            label="📄 Download Laporan (DOCX)",
+            data=docx_buffer.getvalue(),
+            file_name=docx_filename,
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            type="primary"
+        )
+        
         # Send email
         with st.spinner('📧 Mengirim laporan melalui email...'):
             attachments_list = [(docx_buffer.getvalue(), docx_filename)]
@@ -771,15 +785,6 @@ def generate_inspection_report(vessel_name, imo, ship_type, callsign, place, sur
         
         if success:
             st.success(f"✅ Laporan berhasil dikirim ke {email_to_send}!")
-            
-            # Tampilkan download button
-            st.download_button(
-                label="📄 Download Laporan (DOCX)",
-                data=docx_buffer.getvalue(),
-                file_name=docx_filename,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                type="primary"
-            )
         
     except Exception as e:
         st.error(f"❌ Gagal membuat laporan inspeksi: {e}")
