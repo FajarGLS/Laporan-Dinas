@@ -31,7 +31,7 @@ from pymongo.server_api import ServerApi
 # pada username dan password sesuai RFC 3986.
 # Contoh: password "Rahasia100%" menjadi "Rahasia100%25"
 username = quote_plus("laporanglss")
-password = quote_plus("Rahasia100%")
+password = quote_plus("Kmzway87aa")
 MONGODB_URI = f"mongodb+srv://{username}:{password}@cluster0.fbp5d0n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DATABASE_NAME = "laporan_dinas"
 COLLECTION_NAME = "rbd_trips"
