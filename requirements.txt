@@ -1,7 +1,7 @@
 streamlit
-python-docx
 Pillow
-requests
+python-docx
 pandas
 openpyxl
-firebase-admin
+requests
+pymongo
