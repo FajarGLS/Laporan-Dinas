@@ -6,6 +6,7 @@ import math
 import json
 from datetime import date
 from typing import Dict, Any
+from urllib.parse import quote_plus
 
 import streamlit as st
 from PIL import Image
@@ -26,7 +27,12 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 
 # MongoDB Configuration
-MONGODB_URI = "mongodb+srv://laporanglss:Rahasia100%@cluster0.fbp5d0n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# Perbaikan: Menggunakan urllib.parse.quote_plus untuk meng-escape karakter khusus
+# pada username dan password sesuai RFC 3986.
+# Contoh: password "Rahasia100%" menjadi "Rahasia100%25"
+username = quote_plus("laporanglss")
+password = quote_plus("Rahasia100%")
+MONGODB_URI = f"mongodb+srv://{username}:{password}@cluster0.fbp5d0n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DATABASE_NAME = "laporan_dinas"
 COLLECTION_NAME = "rbd_trips"
 
@@ -51,10 +57,9 @@ db_collection = init_mongodb()
 # KONFIGURASI APLIKASI
 # ==============================================================================
 
-# Konfigurasi URL template .docx
-TEMPLATE_INSPEKSI_URL = "https://github.com/FajarDPA/Laporan-Inspeksi/raw/main/INSPEKSI.docx"
-# Konfigurasi URL template .xlsx
-TEMPLATE_RBD_URL = "https://github.com/FajarDPA/Laporan-Inspeksi/raw/main/RBD.xlsx"
+# Perbaikan: Menggunakan URL raw yang benar dari GitHub
+TEMPLATE_INSPEKSI_URL = "https://raw.githubusercontent.com/FajarGLS/Laporan-Dinas/main/INSPEKSI.docx"
+TEMPLATE_RBD_URL = "https://raw.githubusercontent.com/FajarGLS/Laporan-Dinas/main/RBD.xlsx"
 
 # Konfigurasi SMTP email
 EMAIL_SENDER = "fajar@dpagls.my.id"
@@ -604,6 +609,7 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
     weekend_transport = st.text_input("Uang Transport di tanggal Merah", value="0", help="Akan masuk ke sel N52")
 
     # Tombol untuk menyimpan, memuat, dan generate
+    col_buttons = st.columns(3)
     with col_buttons[0]:
         if st.button("💾 Simpan Data"):
             trip_data = {
@@ -619,7 +625,7 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
                 "airport_tax": airport_tax,
                 "ship_cost": ship_cost,
                 "train_cost": train_cost,
-                "bus_cost": bus_cost,  # Corrected line: added a closing quote and comma
+                "bus_cost": bus_cost,
                 "fuel_cost": fuel_cost,
                 "toll_cost": toll_cost,
                 "taxi_cost": taxi_cost,
@@ -630,3 +636,136 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
 
             if save_to_mongodb(trip_data):
                 st.experimental_rerun()
+    with col_buttons[1]:
+        if st.button("📂 Muat Data"):
+            if trip_id:
+                loaded_data = load_from_mongodb(trip_id)
+                if loaded_data:
+                    st.session_state.update({
+                        "trip_id": loaded_data.get("trip_id", ""),
+                        "start_date": pd.to_datetime(loaded_data.get("start_date")).date(),
+                        "end_date": pd.to_datetime(loaded_data.get("end_date")).date(),
+                        "trip_purpose": loaded_data.get("trip_purpose", ""),
+                        "vessel_code": loaded_data.get("vessel_code", ""),
+                        "hotel_cost": loaded_data.get("hotel_cost", "0"),
+                        "deposit": loaded_data.get("deposit", "0"),
+                        "plane_cost": loaded_data.get("plane_cost", "0"),
+                        "miscellaneous": loaded_data.get("miscellaneous", "0"),
+                        "airport_tax": loaded_data.get("airport_tax", "0"),
+                        "ship_cost": loaded_data.get("ship_cost", "0"),
+                        "train_cost": loaded_data.get("train_cost", "0"),
+                        "bus_cost": loaded_data.get("bus_cost", "0"),
+                        "fuel_cost": loaded_data.get("fuel_cost", "0"),
+                        "toll_cost": loaded_data.get("toll_cost", "0"),
+                        "taxi_cost": loaded_data.get("taxi_cost", "0"),
+                        "local_transport": loaded_data.get("local_transport", "0"),
+                        "boat_jetty": loaded_data.get("boat_jetty", "0"),
+                        "weekend_transport": loaded_data.get("weekend_transport", "0")
+                    })
+                    st.experimental_rerun()
+            else:
+                st.warning("⚠️ Silakan masukkan Trip ID untuk memuat data.")
+    with col_buttons[2]:
+        if st.button("📝 Generate Laporan & Send Email"):
+            if not trip_id:
+                st.error("Silakan masukkan Trip ID untuk melanjutkan.")
+                st.stop()
+            
+            # Mendapatkan data terakhir yang diisi
+            trip_data = {
+                "trip_id": trip_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "trip_purpose": trip_purpose,
+                "vessel_code": vessel_code,
+                "hotel_cost": hotel_cost,
+                "deposit": deposit,
+                "plane_cost": plane_cost,
+                "miscellaneous": miscellaneous,
+                "airport_tax": airport_tax,
+                "ship_cost": ship_cost,
+                "train_cost": train_cost,
+                "bus_cost": bus_cost,
+                "fuel_cost": fuel_cost,
+                "toll_cost": toll_cost,
+                "taxi_cost": taxi_cost,
+                "local_transport": local_transport,
+                "boat_jetty": boat_jetty,
+                "weekend_transport": weekend_transport
+            }
+
+            st.write("Mengambil template dari GitHub...")
+            try:
+                response = requests.get(TEMPLATE_RBD_URL)
+                response.raise_for_status()
+                template_file = io.BytesIO(response.content)
+            except requests.exceptions.RequestException as e:
+                st.error(f"Gagal mengambil template RBD dari GitHub: {e}. Pastikan URL-nya benar.")
+                st.stop()
+
+            st.write("Membuat laporan RBD...")
+            try:
+                rbd_wb = load_workbook(template_file)
+                ws = rbd_wb.active
+
+                # Mengisi data ke spreadsheet
+                ws['C13'] = trip_data["trip_purpose"]
+                ws['F13'] = trip_data["vessel_code"]
+                ws['K13'] = "DPA"
+                ws['N20'] = float(trip_data["hotel_cost"])
+                ws['N22'] = float(trip_data["deposit"])
+                ws['N24'] = float(trip_data["plane_cost"])
+                ws['N26'] = float(trip_data["miscellaneous"])
+                ws['N28'] = float(trip_data["airport_tax"])
+                ws['N30'] = float(trip_data["ship_cost"])
+                ws['N33'] = float(trip_data["train_cost"])
+                ws['N36'] = float(trip_data["bus_cost"])
+                ws['N39'] = float(trip_data["fuel_cost"])
+                ws['N40'] = float(trip_data["toll_cost"])
+                ws['N42'] = float(trip_data["taxi_cost"])
+                ws['N46'] = float(trip_data["local_transport"])
+                ws['N47'] = float(trip_data["boat_jetty"])
+                ws['N52'] = float(trip_data["weekend_transport"])
+                
+                # Menghitung durasi
+                duration = (trip_data["end_date"] - trip_data["start_date"]).days + 1
+                ws['I15'] = duration
+                ws['I16'] = trip_data["start_date"].strftime("%d %B %Y")
+                ws['I17'] = trip_data["end_date"].strftime("%d %B %Y")
+                
+                # Mengisi tanggal
+                ws['L60'] = trip_data["end_date"]
+                
+                output_buffer = io.BytesIO()
+                rbd_wb.save(output_buffer)
+                output_buffer.seek(0)
+                
+                # Konfigurasi email
+                st.subheader("Email Penerima")
+                email_rbd = st.text_input("Masukkan email penerima untuk RBD")
+                
+                if email_rbd:
+                    rbd_filename = f"RBD {trip_data['trip_id']}.xlsx"
+                    attachments_list = [(output_buffer.getvalue(), rbd_filename)]
+                    
+                    st.write("Mengirim laporan melalui email...")
+                    success = send_email_with_attachment(
+                        EMAIL_SENDER, EMAIL_PASSWORD, email_rbd, SMTP_SERVER, SMTP_PORT,
+                        f"Rincian Biaya Dinas: {trip_data['trip_id']}",
+                        f"Terlampir laporan rincian biaya perjalanan dinas dengan ID {trip_data['trip_id']} dalam format XLSX.",
+                        attachments_list
+                    )
+                    if success:
+                        st.success(f"Laporan RBD berhasil dikirim ke {email_rbd}!")
+                        
+                    st.download_button(
+                        label="📄 Download Laporan (XLSX)",
+                        data=output_buffer,
+                        file_name=rbd_filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                else:
+                    st.warning("⚠️ Masukkan alamat email untuk mengirim RBD.")
+            
+            except Exception as e:
+                st.error(f"Gagal membuat laporan RBD: {e}")
