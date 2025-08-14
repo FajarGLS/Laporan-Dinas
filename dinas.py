@@ -604,7 +604,6 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
     weekend_transport = st.text_input("Uang Transport di tanggal Merah", value="0", help="Akan masuk ke sel N52")
 
     # Tombol untuk menyimpan, memuat, dan generate
-    col_buttons = st.columns(3)
     with col_buttons[0]:
         if st.button("💾 Simpan Data"):
             trip_data = {
@@ -620,4 +619,14 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
                 "airport_tax": airport_tax,
                 "ship_cost": ship_cost,
                 "train_cost": train_cost,
-                "bus_cost
+                "bus_cost": bus_cost,  # Corrected line: added a closing quote and comma
+                "fuel_cost": fuel_cost,
+                "toll_cost": toll_cost,
+                "taxi_cost": taxi_cost,
+                "local_transport": local_transport,
+                "boat_jetty": boat_jetty,
+                "weekend_transport": weekend_transport
+            }
+
+            if save_to_mongodb(trip_data):
+                st.experimental_rerun()
