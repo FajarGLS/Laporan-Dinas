@@ -25,10 +25,11 @@ from email import encoders
 # --- MongoDB Imports ---
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+from pymongo.errors import ConnectionFailure, OperationFailure
 
 # MongoDB Configuration
-# Perbaikan: Menggunakan urllib.parse.quote_plus untuk meng-escape karakter khusus
-# pada username dan password sesuai RFC 3986.
+# Menggunakan urllib.parse.quote_plus untuk meng-escape karakter khusus
+# Ini adalah praktik yang baik meskipun username/password saat ini tidak mengandung karakter khusus
 username = quote_plus("laporanglss")
 password = quote_plus("Kmzway87aa")
 MONGODB_URI = f"mongodb+srv://{username}:{password}@cluster0.fbp5d0n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -40,12 +41,24 @@ COLLECTION_NAME = "rbd_trips"
 def init_mongodb():
     """Initialize MongoDB connection with caching"""
     try:
-        client = MongoClient(MONGODB_URI, server_api=ServerApi('1'))
-        # Test the connection
+        # Menambahkan parameter `serverSelectionTimeoutMS` untuk mempercepat deteksi kegagalan
+        client = MongoClient(MONGODB_URI, server_api=ServerApi('1'), serverSelectionTimeoutMS=5000)
+        
+        # Test the connection. 'ping' adalah perintah sederhana
         client.admin.command('ping')
+        
         st.success("✅ Successfully connected to MongoDB!")
         return client[DATABASE_NAME][COLLECTION_NAME]
+    except ConnectionFailure as e:
+        # Tangani kegagalan koneksi secara spesifik
+        st.error(f"❌ Failed to connect to MongoDB. Pastikan IP Whitelisting sudah diatur. Detail: {e}")
+        return None
+    except OperationFailure as e:
+        # Tangani kesalahan otentikasi atau server lainnya
+        st.error(f"❌ Failed to connect to MongoDB. Pastikan username dan password benar. Detail: {e}")
+        return None
     except Exception as e:
+        # Tangani kesalahan umum
         st.error(f"❌ Failed to connect to MongoDB: {e}")
         return None
 
@@ -56,13 +69,13 @@ db_collection = init_mongodb()
 # KONFIGURASI APLIKASI
 # ==============================================================================
 
-# Perbaikan: Menggunakan URL raw yang benar dari GitHub
+# Menggunakan URL raw yang benar dari GitHub
 TEMPLATE_INSPEKSI_URL = "https://raw.githubusercontent.com/FajarGLS/Laporan-Dinas/main/INSPEKSI.docx"
 TEMPLATE_RBD_URL = "https://raw.githubusercontent.com/FajarGLS/Laporan-Dinas/main/RBD.xlsx"
 
 # Konfigurasi SMTP email
 EMAIL_SENDER = "fajar@dpagls.my.id"
-# Perbaikan: Menggunakan quote_plus untuk meng-escape password email
+# Menggunakan quote_plus untuk meng-escape password email
 EMAIL_PASSWORD = quote_plus("Rahasia100%")
 SMTP_SERVER = "mail.dpagls.my.id"
 SMTP_PORT = 465
@@ -97,6 +110,8 @@ if "dok_rows" not in st.session_state:
     st.session_state.dok_rows = 10
 if "report_type" not in st.session_state:
     st.session_state.report_type = "Laporan Inspeksi"
+if "form_data" not in st.session_state:
+    st.session_state.form_data = {}
 
 # ==============================================================================
 # HELPERS UNTUK MEMANIPULASI DOKUMEN WORD (.docx)
@@ -279,7 +294,7 @@ def send_email_with_attachment(
         msg["From"] = from_email
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg.attach(MIMEBase("text", "plain", payload=body))
+        msg.attach(MIMEBase("text", "plain", payload=body.encode('utf-8')))
 
         for attachment_bytes, attachment_filename in attachments:
             part = MIMEBase("application", "octet-stream")
@@ -400,6 +415,10 @@ with st.sidebar:
         st.success("🟢 MongoDB Connected")
     else:
         st.error("🔴 MongoDB Disconnected")
+    # Tambahkan tombol untuk debug
+    if st.button("Lihat MongoDB Connection URI"):
+        st.code(MONGODB_URI)
+
 
 # ==============================================================================
 # BAGIAN 1: LAPORAN INSPEKSI
@@ -574,39 +593,45 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
     # Dropdown untuk memilih trip ID yang sudah ada
     col_trip1, col_trip2 = st.columns([2, 1])
     with col_trip1:
-        trip_id = st.text_input("ID Perjalanan Dinas (untuk menyimpan)", help="Contoh: 'FAJAR-JAKARTA-2024-08-15'")
+        trip_id = st.text_input("ID Perjalanan Dinas (untuk menyimpan)", help="Contoh: 'FAJAR-JAKARTA-2024-08-15'", value=st.session_state.form_data.get("trip_id", ""))
     with col_trip2:
         all_trip_ids = get_all_trip_ids()
         if all_trip_ids:
-            selected_existing_trip = st.selectbox("Atau pilih yang sudah ada:", [""] + all_trip_ids)
-            if selected_existing_trip:
-                trip_id = selected_existing_trip
-                st.rerun()
+            selected_existing_trip = st.selectbox("Atau pilih yang sudah ada:", [""] + all_trip_ids, index=all_trip_ids.index(st.session_state.form_data.get("trip_id")) + 1 if st.session_state.form_data.get("trip_id") in all_trip_ids else 0)
+            if selected_existing_trip and selected_existing_trip != st.session_state.form_data.get("trip_id"):
+                st.session_state.form_data["trip_id"] = selected_existing_trip
+                st.experimental_rerun()
     
+    # Memuat data jika trip_id sudah dipilih atau dimuat
+    if trip_id and trip_id not in st.session_state.form_data:
+        loaded_data = load_from_mongodb(trip_id)
+        if loaded_data:
+            st.session_state.form_data = loaded_data
+
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Tanggal Mulai", value=date.today())
+        start_date = st.date_input("Tanggal Mulai", value=pd.to_datetime(st.session_state.form_data.get("start_date")).date() if st.session_state.form_data.get("start_date") else date.today())
     with col2:
-        end_date = st.date_input("Tanggal Selesai", value=date.today())
+        end_date = st.date_input("Tanggal Selesai", value=pd.to_datetime(st.session_state.form_data.get("end_date")).date() if st.session_state.form_data.get("end_date") else date.today())
     
-    trip_purpose = st.text_input("Tujuan Dinas", help="Akan masuk ke sel C13")
-    vessel_code = st.text_input("Kapal Tujuan Dinas / Vessel Code", help="Akan masuk ke sel F13")
+    trip_purpose = st.text_input("Tujuan Dinas", help="Akan masuk ke sel C13", value=st.session_state.form_data.get("trip_purpose", ""))
+    vessel_code = st.text_input("Kapal Tujuan Dinas / Vessel Code", help="Akan masuk ke sel F13", value=st.session_state.form_data.get("vessel_code", ""))
 
     st.subheader("Detail Biaya (Isi nilai 'Pemakaian' atau 'Rp' di sini)")
-    hotel_cost = st.text_input("Akomodasi Hotel", value="0", help="Akan masuk ke sel N20")
-    deposit = st.text_input("Deposit Hotel", value="0", help="Akan masuk ke sel N22")
-    plane_cost = st.text_input("Pesawat", value="0", help="Akan masuk ke sel N24")
-    miscellaneous = st.text_input("Miscellaneous Document Cargo", value="0", help="Akan masuk ke sel N26")
-    airport_tax = st.text_input("Airport Tax", value="0", help="Akan masuk ke sel N28")
-    ship_cost = st.text_input("Kapal Laut", value="0", help="Akan masuk ke sel N30")
-    train_cost = st.text_input("Kereta Api", value="0", help="Akan masuk ke sel N33")
-    bus_cost = st.text_input("Bis", value="0", help="Akan masuk ke sel N36")
-    fuel_cost = st.text_input("Kendaraan Dinas (BBM)", value="0", help="Akan masuk ke sel N39")
-    toll_cost = st.text_input("Nota Toll", value="0", help="Akan masuk ke sel N40")
-    taxi_cost = st.text_input("Taksi / Bis", value="0", help="Akan masuk ke sel N42")
-    local_transport = st.text_input("Transportasi di tempat dinas", value="0", help="Akan masuk ke sel N46")
-    boat_jetty = st.text_input("Boat Jetty", value="0", help="Akan masuk ke sel N47")
-    weekend_transport = st.text_input("Uang Transport di tanggal Merah", value="0", help="Akan masuk ke sel N52")
+    hotel_cost = st.text_input("Akomodasi Hotel", value=st.session_state.form_data.get("hotel_cost", "0"), help="Akan masuk ke sel N20")
+    deposit = st.text_input("Deposit Hotel", value=st.session_state.form_data.get("deposit", "0"), help="Akan masuk ke sel N22")
+    plane_cost = st.text_input("Pesawat", value=st.session_state.form_data.get("plane_cost", "0"), help="Akan masuk ke sel N24")
+    miscellaneous = st.text_input("Miscellaneous Document Cargo", value=st.session_state.form_data.get("miscellaneous", "0"), help="Akan masuk ke sel N26")
+    airport_tax = st.text_input("Airport Tax", value=st.session_state.form_data.get("airport_tax", "0"), help="Akan masuk ke sel N28")
+    ship_cost = st.text_input("Kapal Laut", value=st.session_state.form_data.get("ship_cost", "0"), help="Akan masuk ke sel N30")
+    train_cost = st.text_input("Kereta Api", value=st.session_state.form_data.get("train_cost", "0"), help="Akan masuk ke sel N33")
+    bus_cost = st.text_input("Bis", value=st.session_state.form_data.get("bus_cost", "0"), help="Akan masuk ke sel N36")
+    fuel_cost = st.text_input("Kendaraan Dinas (BBM)", value=st.session_state.form_data.get("fuel_cost", "0"), help="Akan masuk ke sel N39")
+    toll_cost = st.text_input("Nota Toll", value=st.session_state.form_data.get("toll_cost", "0"), help="Akan masuk ke sel N40")
+    taxi_cost = st.text_input("Taksi / Bis", value=st.session_state.form_data.get("taxi_cost", "0"), help="Akan masuk ke sel N42")
+    local_transport = st.text_input("Transportasi di tempat dinas", value=st.session_state.form_data.get("local_transport", "0"), help="Akan masuk ke sel N46")
+    boat_jetty = st.text_input("Boat Jetty", value=st.session_state.form_data.get("boat_jetty", "0"), help="Akan masuk ke sel N47")
+    weekend_transport = st.text_input("Uang Transport di tanggal Merah", value=st.session_state.form_data.get("weekend_transport", "0"), help="Akan masuk ke sel N52")
 
     # Tombol untuk menyimpan, memuat, dan generate
     col_buttons = st.columns(3)
@@ -635,33 +660,14 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
             }
 
             if save_to_mongodb(trip_data):
+                st.session_state.form_data = trip_data
                 st.experimental_rerun()
     with col_buttons[1]:
         if st.button("📂 Muat Data"):
             if trip_id:
                 loaded_data = load_from_mongodb(trip_id)
                 if loaded_data:
-                    st.session_state.update({
-                        "trip_id": loaded_data.get("trip_id", ""),
-                        "start_date": pd.to_datetime(loaded_data.get("start_date")).date(),
-                        "end_date": pd.to_datetime(loaded_data.get("end_date")).date(),
-                        "trip_purpose": loaded_data.get("trip_purpose", ""),
-                        "vessel_code": loaded_data.get("vessel_code", ""),
-                        "hotel_cost": loaded_data.get("hotel_cost", "0"),
-                        "deposit": loaded_data.get("deposit", "0"),
-                        "plane_cost": loaded_data.get("plane_cost", "0"),
-                        "miscellaneous": loaded_data.get("miscellaneous", "0"),
-                        "airport_tax": loaded_data.get("airport_tax", "0"),
-                        "ship_cost": loaded_data.get("ship_cost", "0"),
-                        "train_cost": loaded_data.get("train_cost", "0"),
-                        "bus_cost": loaded_data.get("bus_cost", "0"),
-                        "fuel_cost": loaded_data.get("fuel_cost", "0"),
-                        "toll_cost": loaded_data.get("toll_cost", "0"),
-                        "taxi_cost": loaded_data.get("taxi_cost", "0"),
-                        "local_transport": loaded_data.get("local_transport", "0"),
-                        "boat_jetty": loaded_data.get("boat_jetty", "0"),
-                        "weekend_transport": loaded_data.get("weekend_transport", "0")
-                    })
+                    st.session_state.form_data = loaded_data
                     st.experimental_rerun()
             else:
                 st.warning("⚠️ Silakan masukkan Trip ID untuk memuat data.")
@@ -693,7 +699,7 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
                 "boat_jetty": boat_jetty,
                 "weekend_transport": weekend_transport
             }
-
+            
             st.write("Mengambil template dari GitHub...")
             try:
                 response = requests.get(TEMPLATE_RBD_URL)
@@ -712,21 +718,27 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
                 ws['C13'] = trip_data["trip_purpose"]
                 ws['F13'] = trip_data["vessel_code"]
                 ws['K13'] = "DPA"
-                ws['N20'] = float(trip_data["hotel_cost"])
-                ws['N22'] = float(trip_data["deposit"])
-                ws['N24'] = float(trip_data["plane_cost"])
-                ws['N26'] = float(trip_data["miscellaneous"])
-                ws['N28'] = float(trip_data["airport_tax"])
-                ws['N30'] = float(trip_data["ship_cost"])
-                ws['N33'] = float(trip_data["train_cost"])
-                ws['N36'] = float(trip_data["bus_cost"])
-                ws['N39'] = float(trip_data["fuel_cost"])
-                ws['N40'] = float(trip_data["toll_cost"])
-                ws['N42'] = float(trip_data["taxi_cost"])
-                ws['N46'] = float(trip_data["local_transport"])
-                ws['N47'] = float(trip_data["boat_jetty"])
-                ws['N52'] = float(trip_data["weekend_transport"])
                 
+                # Konversi input ke float, tambahkan penanganan kesalahan jika input tidak valid
+                try:
+                    ws['N20'] = float(trip_data["hotel_cost"])
+                    ws['N22'] = float(trip_data["deposit"])
+                    ws['N24'] = float(trip_data["plane_cost"])
+                    ws['N26'] = float(trip_data["miscellaneous"])
+                    ws['N28'] = float(trip_data["airport_tax"])
+                    ws['N30'] = float(trip_data["ship_cost"])
+                    ws['N33'] = float(trip_data["train_cost"])
+                    ws['N36'] = float(trip_data["bus_cost"])
+                    ws['N39'] = float(trip_data["fuel_cost"])
+                    ws['N40'] = float(trip_data["toll_cost"])
+                    ws['N42'] = float(trip_data["taxi_cost"])
+                    ws['N46'] = float(trip_data["local_transport"])
+                    ws['N47'] = float(trip_data["boat_jetty"])
+                    ws['N52'] = float(trip_data["weekend_transport"])
+                except ValueError as ve:
+                    st.error(f"Input biaya tidak valid. Pastikan semua biaya adalah angka. Detail: {ve}")
+                    st.stop()
+                    
                 # Menghitung durasi
                 duration = (trip_data["end_date"] - trip_data["start_date"]).days + 1
                 ws['I15'] = duration
@@ -766,6 +778,6 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
                     )
                 else:
                     st.warning("⚠️ Masukkan alamat email untuk mengirim RBD.")
-            
+                
             except Exception as e:
                 st.error(f"Gagal membuat laporan RBD: {e}")
