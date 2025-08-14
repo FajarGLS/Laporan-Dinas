@@ -29,7 +29,6 @@ from pymongo.server_api import ServerApi
 # MongoDB Configuration
 # Perbaikan: Menggunakan urllib.parse.quote_plus untuk meng-escape karakter khusus
 # pada username dan password sesuai RFC 3986.
-# Contoh: password "Rahasia100%" menjadi "Rahasia100%25"
 username = quote_plus("laporanglss")
 password = quote_plus("Kmzway87aa")
 MONGODB_URI = f"mongodb+srv://{username}:{password}@cluster0.fbp5d0n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -63,7 +62,8 @@ TEMPLATE_RBD_URL = "https://raw.githubusercontent.com/FajarGLS/Laporan-Dinas/mai
 
 # Konfigurasi SMTP email
 EMAIL_SENDER = "fajar@dpagls.my.id"
-EMAIL_PASSWORD = "Rahasia100%"
+# Perbaikan: Menggunakan quote_plus untuk meng-escape password email
+EMAIL_PASSWORD = quote_plus("Rahasia100%")
 SMTP_SERVER = "mail.dpagls.my.id"
 SMTP_PORT = 465
 
