@@ -411,7 +411,7 @@ with st.sidebar:
     # Tampilkan status koneksi MongoDB
     st.markdown("---")
     st.subheader("Status Database")
-    if db_collection:
+    if db_collection is not None:
         st.success("🟢 MongoDB Connected")
     else:
         st.error("🔴 MongoDB Disconnected")
