@@ -21,31 +21,40 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
-# --- Firebase Imports ---
-from firebase_admin import credentials, firestore, initialize_app
-# Catatan: Kredensial Firebase harus disediakan di lingkungan deployment
-# sebagai string JSON, misalnya melalui Streamlit secrets.
-try:
-    if not st.secrets.get("firebase_service_account"):
-        st.error("Firebase credentials not found. Please add a firebase_service_account to your Streamlit secrets.")
-        st.stop()
-    if not initialize_app():
-        cred = credentials.Certificate(st.secrets["firebase_service_account"])
-        initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    st.error(f"Failed to initialize Firebase: {e}")
-    st.info("Pastikan Anda telah menambahkan kredensial Firebase ke Streamlit secrets.")
-    db = None
+# --- MongoDB Imports ---
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+
+# MongoDB Configuration
+MONGODB_URI = "mongodb+srv://laporanglss:Rahasia100%@cluster0.fbp5d0n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+DATABASE_NAME = "laporan_dinas"
+COLLECTION_NAME = "rbd_trips"
+
+# Initialize MongoDB connection
+@st.cache_resource
+def init_mongodb():
+    """Initialize MongoDB connection with caching"""
+    try:
+        client = MongoClient(MONGODB_URI, server_api=ServerApi('1'))
+        # Test the connection
+        client.admin.command('ping')
+        st.success("✅ Successfully connected to DB!")
+        return client[DATABASE_NAME][COLLECTION_NAME]
+    except Exception as e:
+        st.error(f"❌ Failed to connect to DB: {e}")
+        return None
+
+# Initialize database
+db_collection = init_mongodb()
 
 # ==============================================================================
 # KONFIGURASI APLIKASI
 # ==============================================================================
 
 # Konfigurasi URL template .docx
-TEMPLATE_INSPEKSI_URL = "https://github.com/FajarDPA/Laporan-Inspeksi/raw/main/INSPEKSI.docx"
+TEMPLATE_INSPEKSI_URL = "https://github.com/FajarGLS/Laporan-Dinas/raw/main/INSPEKSI.docx"
 # Konfigurasi URL template .xlsx
-TEMPLATE_RBD_URL = "https://github.com/FajarDPA/Laporan-Inspeksi/raw/main/RBD.xlsx"
+TEMPLATE_RBD_URL = "https://github.com/FajarGLS/Laporan-Dinas/raw/main/RBD.xlsx"
 
 # Konfigurasi SMTP email
 EMAIL_SENDER = "fajar@dpagls.my.id"
@@ -288,6 +297,69 @@ def send_email_with_attachment(
         return False
 
 # ==============================================================================
+# MONGODB FUNCTIONS
+# ==============================================================================
+
+def save_to_mongodb(data: Dict[str, Any]):
+    """Menyimpan data ke MongoDB"""
+    if not db_collection:
+        st.error("❌ Koneksi MongoDB tidak tersedia")
+        return False
+    
+    if not data.get("trip_id"):
+        st.error("❌ Trip ID tidak boleh kosong untuk menyimpan data.")
+        return False
+    
+    try:
+        # Menggunakan upsert untuk update jika sudah ada, insert jika belum
+        result = db_collection.replace_one(
+            {"trip_id": data["trip_id"]}, 
+            data, 
+            upsert=True
+        )
+        
+        if result.upserted_id:
+            st.success(f"✅ Data perjalanan dinas '{data['trip_id']}' berhasil disimpan!")
+        else:
+            st.success(f"✅ Data perjalanan dinas '{data['trip_id']}' berhasil diperbarui!")
+        return True
+    except Exception as e:
+        st.error(f"❌ Gagal menyimpan ke MongoDB: {e}")
+        return False
+
+def load_from_mongodb(trip_id: str) -> Dict[str, Any]:
+    """Memuat data dari MongoDB"""
+    if not db_collection:
+        st.error("❌ Koneksi MongoDB tidak tersedia")
+        return {}
+    
+    try:
+        document = db_collection.find_one({"trip_id": trip_id})
+        if document:
+            # Hapus _id dari hasil karena tidak diperlukan
+            document.pop('_id', None)
+            st.success(f"✅ Data perjalanan dinas '{trip_id}' berhasil dimuat!")
+            return document
+        else:
+            st.warning(f"⚠️ Data perjalanan dinas dengan ID '{trip_id}' tidak ditemukan.")
+            return {}
+    except Exception as e:
+        st.error(f"❌ Gagal memuat dari MongoDB: {e}")
+        return {}
+
+def get_all_trip_ids() -> list:
+    """Mendapatkan semua trip ID yang tersimpan"""
+    if not db_collection:
+        return []
+    
+    try:
+        trip_ids = [doc["trip_id"] for doc in db_collection.find({}, {"trip_id": 1, "_id": 0})]
+        return sorted(trip_ids)
+    except Exception as e:
+        st.error(f"❌ Gagal mengambil daftar trip ID: {e}")
+        return []
+
+# ==============================================================================
 # CALLBACK FUNCTIONS
 # ==============================================================================
 
@@ -310,10 +382,19 @@ with st.sidebar:
         ("Laporan Inspeksi", "Rincian Biaya Perjalanan Dinas")
     )
     st.session_state.report_type = report_type
+    
     if st.session_state.report_type == "Laporan Inspeksi":
         if "dok_rows" not in st.session_state:
             st.session_state.dok_rows = 10
         st.button("➕ Tambah Row Dokumentasi", on_click=add_dok_rows)
+    
+    # Tampilkan status koneksi MongoDB
+    st.markdown("---")
+    st.subheader("Status Database")
+    if db_collection:
+        st.success("🟢 DB Connected")
+    else:
+        st.error("🔴 DB Disconnected")
 
 # ==============================================================================
 # BAGIAN 1: LAPORAN INSPEKSI
@@ -484,7 +565,18 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
 
     # --- UI Input untuk RBD ---
     st.subheader("Detail Perjalanan Dinas")
-    trip_id = st.text_input("ID Perjalanan Dinas (untuk menyimpan)", help="Contoh: 'FAJAR-JAKARTA-2024-08-15'")
+    
+    # Dropdown untuk memilih trip ID yang sudah ada
+    col_trip1, col_trip2 = st.columns([2, 1])
+    with col_trip1:
+        trip_id = st.text_input("ID Perjalanan Dinas (untuk menyimpan)", help="Contoh: 'FAJAR-JAKARTA-2024-08-15'")
+    with col_trip2:
+        all_trip_ids = get_all_trip_ids()
+        if all_trip_ids:
+            selected_existing_trip = st.selectbox("Atau pilih yang sudah ada:", [""] + all_trip_ids)
+            if selected_existing_trip:
+                trip_id = selected_existing_trip
+                st.rerun()
     
     col1, col2 = st.columns(2)
     with col1:
@@ -510,28 +602,8 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
     local_transport = st.text_input("Transportasi di tempat dinas", value="0", help="Akan masuk ke sel N46")
     boat_jetty = st.text_input("Boat Jetty", value="0", help="Akan masuk ke sel N47")
     weekend_transport = st.text_input("Uang Transport di tanggal Merah", value="0", help="Akan masuk ke sel N52")
-    
-    # --- Fungsi untuk Menyimpan Data ke Firestore ---
-    def save_to_firestore(data: Dict[str, Any]):
-        if not db: return
-        if not data.get("trip_id"):
-            st.error("Trip ID tidak boleh kosong untuk menyimpan data.")
-            return
-        doc_ref = db.collection("rbd_trips").document(data["trip_id"])
-        doc_ref.set(data)
-        st.success(f"Data perjalanan dinas '{data['trip_id']}' berhasil disimpan!")
 
-    def load_from_firestore(trip_id: str) -> Dict[str, Any]:
-        if not db: return {}
-        doc_ref = db.collection("rbd_trips").document(trip_id)
-        doc = doc_ref.get()
-        if doc.exists:
-            st.success(f"Data perjalanan dinas '{trip_id}' berhasil dimuat!")
-            return doc.to_dict()
-        else:
-            st.warning(f"Data perjalanan dinas dengan ID '{trip_id}' tidak ditemukan.")
-            return {}
-
+    # Tombol untuk menyimpan, memuat, dan generate
     col_buttons = st.columns(3)
     with col_buttons[0]:
         if st.button("💾 Simpan Data"):
@@ -548,95 +620,4 @@ if st.session_state.report_type == "Rincian Biaya Perjalanan Dinas":
                 "airport_tax": airport_tax,
                 "ship_cost": ship_cost,
                 "train_cost": train_cost,
-                "bus_cost": bus_cost,
-                "fuel_cost": fuel_cost,
-                "toll_cost": toll_cost,
-                "taxi_cost": taxi_cost,
-                "local_transport": local_transport,
-                "boat_jetty": boat_jetty,
-                "weekend_transport": weekend_transport
-            }
-            save_to_firestore(trip_data)
-
-    with col_buttons[1]:
-        if st.button("📥 Muat Data"):
-            loaded_data = load_from_firestore(trip_id)
-            if loaded_data:
-                st.session_state["loaded_data"] = loaded_data
-
-    if "loaded_data" in st.session_state and st.session_state.loaded_data:
-        st.write("Menggunakan data yang dimuat. Anda bisa mengubahnya sebelum membuat laporan.")
-        st.session_state.trip_id = st.session_state.loaded_data.get("trip_id")
-        st.session_state.start_date = date.fromisoformat(st.session_state.loaded_data.get("start_date"))
-        st.session_state.end_date = date.fromisoformat(st.session_state.loaded_data.get("end_date"))
-        st.session_state.trip_purpose = st.session_state.loaded_data.get("trip_purpose")
-        st.session_state.vessel_code = st.session_state.loaded_data.get("vessel_code")
-        st.session_state.hotel_cost = st.session_state.loaded_data.get("hotel_cost")
-        st.session_state.deposit = st.session_state.loaded_data.get("deposit")
-        st.session_state.plane_cost = st.session_state.loaded_data.get("plane_cost")
-        st.session_state.miscellaneous = st.session_state.loaded_data.get("miscellaneous")
-        st.session_state.airport_tax = st.session_state.loaded_data.get("airport_tax")
-        st.session_state.ship_cost = st.session_state.loaded_data.get("ship_cost")
-        st.session_state.train_cost = st.session_state.loaded_data.get("train_cost")
-        st.session_state.bus_cost = st.session_state.loaded_data.get("bus_cost")
-        st.session_state.fuel_cost = st.session_state.loaded_data.get("fuel_cost")
-        st.session_state.toll_cost = st.session_state.loaded_data.get("toll_cost")
-        st.session_state.taxi_cost = st.session_state.loaded_data.get("taxi_cost")
-        st.session_state.local_transport = st.session_state.loaded_data.get("local_transport")
-        st.session_state.boat_jetty = st.session_state.loaded_data.get("boat_jetty")
-        st.session_state.weekend_transport = st.session_state.loaded_data.get("weekend_transport")
-
-    # --- Tombol Generate dan Download RBD ---
-    if st.button("📝 Generate & Download RBD"):
-        try:
-            with st.spinner('Mengambil template RBD dari GitHub...'):
-                response = requests.get(TEMPLATE_RBD_URL)
-                response.raise_for_status()
-            
-            # Load the Excel file from the byte stream
-            rbd_buffer = io.BytesIO(response.content)
-            wb = load_workbook(rbd_buffer)
-            ws = wb.active
-            
-            # Mengisi data ke sel-sel yang ditentukan
-            ws['D11'] = start_date.strftime("%d-%m-%Y")
-            ws['H11'] = end_date.strftime("%d-%m-%Y")
-            ws['C13'] = trip_purpose
-            ws['F13'] = vessel_code
-            ws['N20'] = hotel_cost
-            ws['N22'] = deposit
-            ws['N24'] = plane_cost
-            ws['N26'] = miscellaneous
-            ws['N28'] = airport_tax
-            ws['N30'] = ship_cost
-            ws['N33'] = train_cost
-            ws['N36'] = bus_cost
-            ws['N39'] = fuel_cost
-            ws['N40'] = toll_cost
-            ws['N42'] = taxi_cost
-            ws['N46'] = local_transport
-            ws['N47'] = boat_jetty
-            ws['N52'] = weekend_transport
-            ws['A58'] = "Jakarta," + date.today().strftime("%d %B %Y")
-            
-            # Menyimpan kembali ke buffer
-            output_rbd = io.BytesIO()
-            wb.save(output_rbd)
-            output_rbd.seek(0)
-            
-            rbd_filename = f"RBD_{vessel_code}_{start_date.strftime('%Y.%m.%d')}.xlsx"
-            
-            st.success("Laporan RBD berhasil dibuat!")
-            st.download_button(
-                label="📄 Download Rincian Biaya Dinas (XLSX)",
-                data=output_rbd,
-                file_name=rbd_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            
-        except requests.exceptions.RequestException as e:
-            st.error(f"Gagal mengambil template RBD dari GitHub: {e}. Pastikan URL-nya benar.")
-            st.stop()
-        except Exception as e:
-            st.error(f"Terjadi kesalahan saat memproses file Excel: {e}")
-            st.stop()
+                "bus_cost
