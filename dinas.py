@@ -20,6 +20,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from email.mime.text import MIMEText # Tambahkan import ini
 
 # --- MongoDB Imports ---
 from pymongo.mongo_client import MongoClient
@@ -259,7 +260,9 @@ def send_email_with_attachment(from_email, password, to_email, smtp_server, smtp
         msg["From"] = from_email
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg.attach(MIMEBase("text", "plain", payload=body.encode('utf-8')))
+        
+        # Perbaikan: Menggunakan MIMEText untuk konten email
+        msg.attach(MIMEText(body, 'plain'))
 
         for attachment_bytes, attachment_filename in attachments:
             part = MIMEBase("application", "octet-stream")
@@ -649,8 +652,8 @@ def render_rbd_form():
     
     # Calculate total
     total_cost = (hotel_cost + deposit + plane_cost + miscellaneous + airport_tax + 
-                 ship_cost + train_cost + bus_cost + fuel_cost + toll_cost + 
-                 taxi_cost + local_transport + boat_jetty + weekend_transport)
+                  ship_cost + train_cost + bus_cost + fuel_cost + toll_cost + 
+                  taxi_cost + local_transport + boat_jetty + weekend_transport)
     
     # Summary
     with st.container():
@@ -711,7 +714,7 @@ def render_rbd_form():
 # ==============================================================================
 
 def generate_inspection_report(vessel_name, imo, ship_type, callsign, place, survey_date, 
-                             master, surveyor, activities, email_to_send):
+                               master, surveyor, activities, email_to_send):
     """Generate dan kirim laporan inspeksi"""
     
     if not email_to_send:
