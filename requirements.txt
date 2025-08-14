@@ -1,0 +1,7 @@
+streamlit
+python-docx
+Pillow
+requests
+pandas
+openpyxl
+firebase-admin
